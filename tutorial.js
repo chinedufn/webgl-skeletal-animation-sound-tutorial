@@ -1,4 +1,6 @@
 var glMat4 = require('gl-mat4')
+var glMat3 = require('gl-mat3')
+var glVec3 = require('gl-vec3')
 var expandVertexData = require('expand-vertex-data')
 var animationSystem = require('skeletal-animation-system')
 var mat4ToDualQuat = require('mat4-to-dual-quat')
@@ -12,6 +14,32 @@ canvas.width = 500
 canvas.height = 500
 var mountLocation = document.getElementById('webgl-skeletal-sound-tutorial') || document.body
 mountLocation.appendChild(canvas)
+
+var isDragging = false
+var xCamRot = Math.PI / 20
+var yCamRot = 0
+var lastX
+var lastY
+canvas.onmousedown = function (e) {
+  isDragging = true
+  lastX = e.pageX
+  lastY = e.pageY
+}
+canvas.onmouseup = function () {
+  isDragging = false
+}
+canvas.onmousemove = function (e) {
+  if (isDragging) {
+    xCamRot += (e.pageY - lastY) / 60
+    yCamRot -= (e.pageX - lastX) / 60
+
+    xCamRot = Math.min(xCamRot, Math.PI / 2.5)
+    xCamRot = Math.max(-0.5, xCamRot)
+
+    lastX = e.pageX
+    lastY = e.pageY
+  }
+}
 
 var gl = canvas.getContext('webgl')
 gl.clearColor(0.0, 0.0, 0.0, 1.0)
@@ -131,8 +159,6 @@ void main (void) {
 
   // We only have one index right now... so the weight is always 1.
   gl_Position = leftHandedPosition;
-
-  vLightWeighting = vec3(1.0, 1.0, 1.0);
 }
 `
 
@@ -179,6 +205,7 @@ var lightingDirectionUni = gl.getUniformLocation(shaderProgram, 'uLightingDirect
 var directionalColorUni = gl.getUniformLocation(shaderProgram, 'uDirectionalColor')
 var mVMatrixUni = gl.getUniformLocation(shaderProgram, 'uMVMatrix')
 var pMatrixUni = gl.getUniformLocation(shaderProgram, 'uPMatrix')
+var nMatrixUni = gl.getUniformLocation(shaderProgram, 'uNMatrix')
 
 var boneRotQuaternions = {}
 var boneTransQuaternions = {}
@@ -219,9 +246,14 @@ var vertexIndexBuffer = gl.createBuffer()
 gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, vertexIndexBuffer)
 gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint16Array(baseballPlayer.positionIndices), gl.STATIC_DRAW)
 
-gl.uniform3fv(ambientColorUni, [1, 0, 0])
-gl.uniform3fv(lightingDirectionUni, [1, -1, -1])
-gl.uniform3fv(directionalColorUni, [0, 0, 1])
+gl.uniform3fv(ambientColorUni, [0.3, 0.3, 0.3])
+var lightingDirection = [1, -1, -1]
+// TODO: Why scale? Look up in learningwebgl.com lesson
+glVec3.scale(lightingDirection, lightingDirection, -1)
+glVec3.normalize(lightingDirection, lightingDirection)
+
+gl.uniform3fv(lightingDirectionUni, lightingDirection)
+gl.uniform3fv(directionalColorUni, [0, 1, 1])
 
 gl.uniformMatrix4fv(pMatrixUni, false, glMat4.perspective([], Math.PI / 3, 1, 0.1, 100))
 
@@ -259,10 +291,26 @@ function draw () {
     gl.uniform4fv(boneTransQuaternions[j], transQuat)
   }
 
-  var modelMatrix = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, -27, 1]
+  var modelMatrix = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]
+  var nMatrix = glMat3.fromMat4([], modelMatrix)
+
   // glMat4.rotateY(modelMatrix, modelMatrix, yRotation)
-  var viewMatrix = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]
-  var mVMatrix = glMat4.multiply([], viewMatrix, modelMatrix)
+
+  var camera = glMat4.create()
+  glMat4.translate(camera, camera, [0, 0, 25])
+  var yAxisCameraRot = glMat4.create()
+  var xAxisCameraRot = glMat4.create()
+  glMat4.rotateX(xAxisCameraRot, xAxisCameraRot, -xCamRot)
+  glMat4.rotateY(yAxisCameraRot, yAxisCameraRot, yCamRot)
+
+  glMat4.multiply(camera, xAxisCameraRot, camera)
+  glMat4.multiply(camera, yAxisCameraRot, camera)
+
+  glMat4.lookAt(camera, [camera[12], camera[13], camera[14]], [0, 0, 0], [0, 1, 0])
+
+  var mVMatrix = glMat4.multiply([], camera, modelMatrix)
+
+  gl.uniformMatrix3fv(nMatrixUni, false, nMatrix)
   gl.uniformMatrix4fv(mVMatrixUni, false, mVMatrix)
 
   gl.drawElements(gl.TRIANGLES, baseballPlayer.positionIndices.length, gl.UNSIGNED_SHORT, 0)
