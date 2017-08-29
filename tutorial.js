@@ -276,6 +276,54 @@ baseballPlayer.keyframes = Object.keys(baseballPlayer.keyframes)
 var clockTime = 0
 // var yRotation = 0
 var previousLowerKeyframe
+
+var audio = new window.Audio()
+audio.crossOrigin = 'anonymous'
+audio.src = 'https://dl.dropboxusercontent.com/s/8c9m92u1euqnkaz/GershwinWhiteman-RhapsodyInBluePart1.mp3'
+audio.play()
+
+var context = new window.AudioContext()
+var analyzer = context.createScriptProcessor(1024, 1, 1)
+var source = context.createMediaElementSource(audio)
+source.connect(analyzer)
+analyzer.connect(context.destination)
+
+var volumeBarContainer = document.createElement('div')
+volumeBarContainer.style.display = 'flex'
+
+var volumeBars = []
+
+for (var i = 0; i < 10; i++) {
+  var volumeBar = document.createElement('div')
+  volumeBar.style.width = '30px'
+  volumeBar.style.height = '30px'
+  volumeBar.style.border = 'solid #333 1px'
+  volumeBar.style.transition = '0.4s ease background-color'
+  volumeBars.push(volumeBar)
+  volumeBarContainer.appendChild(volumeBar)
+}
+document.body.appendChild(volumeBarContainer)
+
+analyzer.onaudioprocess = function (e) {
+  var out = e.outputBuffer.getChannelData(0)
+  var input = e.inputBuffer.getChannelData(0)
+  var max = 0
+
+  for (var i = 0; i < input.length; i++) {
+    out[i] = input[i]
+    max = input[i] > max ? input[i] : max
+  }
+
+  var volume = max * 50
+  for (var j = 0; j < 10; j++) {
+    if (j < volume) {
+      volumeBars[j].style.backgroundColor = 'red'
+    } else {
+      volumeBars[j].style.backgroundColor = 'white'
+    }
+  }
+}
+
 function draw () {
   // yRotation += 0.02
   gl.clear(gl.COLOR_BUFFER_BIT, gl.DEPTH_BUFFER_BIT)
