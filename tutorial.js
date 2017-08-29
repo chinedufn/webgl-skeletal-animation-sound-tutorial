@@ -52,10 +52,7 @@ attribute vec3 aVertexNormal;
 attribute vec4 aJointIndex;
 attribute vec4 aJointWeight;
 
-uniform vec3 uAmbientColor;
-
-uniform vec3 uLightingDirection;
-uniform vec3 uDirectionalColor;
+varying vec3 vNormal;
 
 uniform mat4 uMVMatrix;
 uniform mat4 uPMatrix;
@@ -68,6 +65,7 @@ uniform vec4 boneRotQuaternions[18];
 uniform vec4 boneTransQuaternions[18];
 
 varying vec3 vLightWeighting;
+varying vec3 vNormmal;
 
 void main (void) {
   // Blend our dual quaternion
@@ -144,9 +142,6 @@ void main (void) {
   // We convert our normal into column major before multiplying it with our normal matrix
   transformedNormal = uNMatrix * transformedNormal;
 
-  float directionalLightWeighting = max(dot(transformedNormal, uLightingDirection), 0.0);
-  vLightWeighting = uAmbientColor + uDirectionalColor * directionalLightWeighting;
-
   // Blender uses a right handed coordinate system. We convert to left handed here
   vec4 leftWorldSpace = convertedMatrix * vec4(aVertexPosition, 1.0);
   y = leftWorldSpace.z;
@@ -159,6 +154,8 @@ void main (void) {
 
   // We only have one index right now... so the weight is always 1.
   gl_Position = leftHandedPosition;
+
+  vNormal = transformedNormal;
 }
 `
 
@@ -166,10 +163,19 @@ var fragmentGLSL = `
 precision mediump float;
 
 varying vec3 vLightWeighting;
+varying vec3 vNormal;
+
+uniform vec3 uAmbientColor;
+uniform vec3 uDirectionalColor;
+uniform vec3 uLightingDirection;
 
 void main(void) {
+  float directionalLightWeighting = max(dot(vNormal, uLightingDirection), 0.0);
+  vec3 lightWeighting = uAmbientColor + uDirectionalColor * directionalLightWeighting;
+
+
   vec3 baseColor = vec3(1.0, 1.0, 1.0);
-  gl_FragColor = vec4(baseColor * vLightWeighting, 1.0);
+  gl_FragColor = vec4(baseColor * lightWeighting, 1.0);
 }
 `
 
