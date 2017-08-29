@@ -170,9 +170,9 @@ uniform vec3 uDirectionalColor;
 uniform vec3 uLightingDirection;
 
 void main(void) {
+  // TODO: Phong
   float directionalLightWeighting = max(dot(vNormal, uLightingDirection), 0.0);
   vec3 lightWeighting = uAmbientColor + uDirectionalColor * directionalLightWeighting;
-
 
   vec3 baseColor = vec3(1.0, 1.0, 1.0);
   gl_FragColor = vec4(baseColor * lightWeighting, 1.0);
@@ -275,6 +275,7 @@ baseballPlayer.keyframes = Object.keys(baseballPlayer.keyframes)
 
 var clockTime = 0
 // var yRotation = 0
+var previousLowerKeyframe
 function draw () {
   // yRotation += 0.02
   gl.clear(gl.COLOR_BUFFER_BIT, gl.DEPTH_BUFFER_BIT)
@@ -289,6 +290,15 @@ function draw () {
       range: [6, 17]
     }
   })
+
+  var newLowerKeyframe = animationData.currentAnimationInfo.lowerKeyframeNumber
+
+  if (newLowerKeyframe === 8 && previousLowerKeyframe !== newLowerKeyframe) {
+    console.log('playSound')
+  }
+
+  previousLowerKeyframe = newLowerKeyframe
+
   for (var j = 0; j < 18; j++) {
     var rotQuat = animationData.joints[j].slice(0, 4)
     var transQuat = animationData.joints[j].slice(4, 8)
