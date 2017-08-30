@@ -5,15 +5,14 @@ var expandVertexData = require('expand-vertex-data')
 var animationSystem = require('skeletal-animation-system')
 var mat4ToDualQuat = require('mat4-to-dual-quat')
 
-var baseballPlayer = require('./cowboy.json')
-baseballPlayer = expandVertexData(baseballPlayer)
-baseballPlayer.keyframes = require('./cowboy.json').keyframes
+var model = require('./cowboy.json')
+baseballPlayer = expandVertexData(model)
+baseballPlayer.keyframes = model.keyframes
 
 var canvas = document.createElement('canvas')
 canvas.width = 500
 canvas.height = 500
 var mountLocation = document.getElementById('webgl-skeletal-sound-tutorial') || document.body
-mountLocation.appendChild(canvas)
 
 var isDragging = false
 var xCamRot = Math.PI / 20
@@ -273,7 +272,17 @@ baseballPlayer.keyframes = Object.keys(baseballPlayer.keyframes)
   return dualQuats
 }, {})
 
-var clockTime = 0
+var playbackSlider = document.createElement('input')
+playbackSlider.type = 'range'
+playbackSlider.max = 100
+playbackSlider.min = 0
+playbackSlider.value = 100
+var playbackSpeed = 1
+playbackSlider.oninput = function (e) {
+  playbackSpeed = e.target.value / 100
+}
+
+
 // var yRotation = 0
 var previousLowerKeyframe
 
@@ -285,6 +294,7 @@ audio.src = 'bat-hit-ball.mp3'
 var context = new window.AudioContext()
 var analyzer = context.createScriptProcessor(1024, 1, 1)
 var source = context.createMediaElementSource(audio)
+console.log(source)
 var gainNode = context.createGain()
 
 source.connect(analyzer)
@@ -293,6 +303,7 @@ gainNode.connect(context.destination)
 
 var volumeBarContainer = document.createElement('div')
 volumeBarContainer.style.display = 'flex'
+volumeBarContainer.style.display = 'flex'
 
 var volumeBars = []
 var muted = true
@@ -300,6 +311,8 @@ var hasClickedBefore = false
 var muteButton = document.createElement('button')
 muteButton.innerHTML = 'Click to un-mute'
 muteButton.style.cursor = 'pointer'
+muteButton.style.marginRight = '10px'
+muteButton.style.marginLeft = '10px'
 muteButton.onclick = function () {
   // On iOS sounds will not play until the first time that a user action has triggered
   // a sound.
@@ -316,18 +329,26 @@ muteButton.onclick = function () {
 
   muteButton.innerHTML = muted ? 'Click to un-mute' : 'Click to mute'
 }
-document.body.appendChild(muteButton)
 
-for (var i = 0; i < 10; i++) {
+for (var k = 0; k < 10; k++) {
   var volumeBar = document.createElement('div')
-  volumeBar.style.width = '30px'
-  volumeBar.style.height = '30px'
+  volumeBar.style.width = '20px'
+  volumeBar.style.height = '20px'
   volumeBar.style.border = 'solid #333 1px'
   volumeBar.style.transition = '0.9s ease background-color'
   volumeBars.push(volumeBar)
   volumeBarContainer.appendChild(volumeBar)
 }
-document.body.appendChild(volumeBarContainer)
+
+var controls = document.createElement('div')
+controls.style.display = 'flex'
+controls.style.marginBottom = '5px'
+
+controls.appendChild(playbackSlider)
+controls.appendChild(muteButton)
+controls.appendChild(volumeBarContainer)
+mountLocation.appendChild(controls)
+mountLocation.appendChild(canvas)
 
 analyzer.onaudioprocess = function (e) {
   var out = e.outputBuffer.getChannelData(0)
@@ -349,11 +370,18 @@ analyzer.onaudioprocess = function (e) {
   }
 }
 
+var clockTime = 0
+var lastStartTime = new Date().getTime()
 function draw () {
+  var currentTime = new Date().getTime()
+
+  var timeElapsed = (currentTime - lastStartTime) / 1000 * playbackSpeed
+  clockTime += timeElapsed
+
+  lastStartTime = currentTime
   // yRotation += 0.02
   gl.clear(gl.COLOR_BUFFER_BIT, gl.DEPTH_BUFFER_BIT)
 
-  clockTime += 0.016
   var animationData = animationSystem.interpolateJoints({
     currentTime: clockTime,
     keyframes: baseballPlayer.keyframes,
