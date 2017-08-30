@@ -7,12 +7,18 @@ var mat4ToDualQuat = require('mat4-to-dual-quat')
 
 var model = require('./cowboy.json')
 var baseballPlayer = expandVertexData(model)
-baseballPlayer.keyframes = model.keyframes
+baseballPlayer.keyframes = Object.keys(model.keyframes)
+.reduce(function (dualQuats, keyframe) {
+  dualQuats[keyframe] = []
+  for (var k = 0; k < model.keyframes[keyframe].length; k++) {
+    dualQuats[keyframe][k] = mat4ToDualQuat(model.keyframes[keyframe][k])
+  }
+  return dualQuats
+}, {})
 
 var canvas = document.createElement('canvas')
 canvas.width = 500
 canvas.height = 500
-var mountLocation = document.getElementById('webgl-skeletal-sound-tutorial') || document.body
 
 var isDragging = false
 var xCamRot = Math.PI / 20
@@ -291,16 +297,6 @@ textureImage.onload = function () {
 }
 textureImage.src = 'cowboy-texture.png'
 
-var firstKeyframe = Object.keys(baseballPlayer.keyframes)[0]
-baseballPlayer.keyframes = Object.keys(baseballPlayer.keyframes)
-.reduce(function (dualQuats, keyframe) {
-  dualQuats[keyframe] = []
-  for (var k = 0; k < baseballPlayer.keyframes[keyframe].length; k++) {
-    dualQuats[keyframe][k] = mat4ToDualQuat(baseballPlayer.keyframes[keyframe][k])
-  }
-  return dualQuats
-}, {})
-
 var playbackSlider = document.createElement('input')
 playbackSlider.type = 'range'
 playbackSlider.max = 100
@@ -313,6 +309,81 @@ playbackSlider.oninput = function (e) {
 
 var previousLowerKeyframe
 
+var clockTime = 0
+var lastStartTime = new Date().getTime()
+var keyframesToPlaySoundOn = {
+  7: true
+}
+function draw () {
+  var currentTime = new Date().getTime()
+
+  var timeElapsed = (currentTime - lastStartTime) / 1000 * playbackSpeed
+  clockTime += timeElapsed
+
+  lastStartTime = currentTime
+  // yRotation += 0.02
+  gl.clear(gl.COLOR_BUFFER_BIT, gl.DEPTH_BUFFER_BIT)
+
+  var animationData = animationSystem.interpolateJoints({
+    currentTime: clockTime,
+    keyframes: baseballPlayer.keyframes,
+    jointNums: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 13, 14, 15, 16, 17],
+    currentAnimation: {
+      startTime: 0,
+      range: [6, 17]
+    }
+  })
+
+  var newLowerKeyframe = animationData.currentAnimationInfo.lowerKeyframeNumber
+
+  if (keyframesToPlaySoundOn[newLowerKeyframe] && previousLowerKeyframe !== newLowerKeyframe) {
+    if (!muted) {
+      audio.play()
+    }
+  }
+
+  previousLowerKeyframe = newLowerKeyframe
+
+  for (var j = 0; j < 18; j++) {
+    var rotQuat = animationData.joints[j].slice(0, 4)
+    var transQuat = animationData.joints[j].slice(4, 8)
+
+    gl.uniform4fv(boneRotQuaternions[j], rotQuat)
+    gl.uniform4fv(boneTransQuaternions[j], transQuat)
+  }
+
+  var modelMatrix = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]
+  var nMatrix = glMat3.fromMat4([], modelMatrix)
+
+  // glMat4.rotateY(modelMatrix, modelMatrix, yRotation)
+
+  var camera = glMat4.create()
+  glMat4.translate(camera, camera, [0, 0, 25])
+  var yAxisCameraRot = glMat4.create()
+  var xAxisCameraRot = glMat4.create()
+  glMat4.rotateX(xAxisCameraRot, xAxisCameraRot, -xCamRot)
+  glMat4.rotateY(yAxisCameraRot, yAxisCameraRot, yCamRot)
+
+  glMat4.multiply(camera, xAxisCameraRot, camera)
+  glMat4.multiply(camera, yAxisCameraRot, camera)
+
+  glMat4.lookAt(camera, [camera[12], camera[13], camera[14]], [0, 0, 0], [0, 1, 0])
+
+  var mVMatrix = glMat4.multiply([], camera, modelMatrix)
+
+  gl.uniformMatrix3fv(nMatrixUni, false, nMatrix)
+  gl.uniformMatrix4fv(mVMatrixUni, false, mVMatrix)
+
+  if (imageHasLoaded) {
+    gl.drawElements(gl.TRIANGLES, baseballPlayer.positionIndices.length, gl.UNSIGNED_SHORT, 0)
+  }
+
+  window.requestAnimationFrame(draw)
+}
+
+/**
+ * Web Audio setup
+ */
 var audio = new window.Audio()
 audio.crossOrigin = 'anonymous'
 // audio.src = 'https://dl.dropboxusercontent.com/s/8c9m92u1euqnkaz/GershwinWhiteman-RhapsodyInBluePart1.mp3'
@@ -370,12 +441,6 @@ var controls = document.createElement('div')
 controls.style.display = 'flex'
 controls.style.marginBottom = '5px'
 
-controls.appendChild(playbackSlider)
-controls.appendChild(muteButton)
-controls.appendChild(volumeBarContainer)
-mountLocation.appendChild(controls)
-mountLocation.appendChild(canvas)
-
 analyzer.onaudioprocess = function (e) {
   var out = e.outputBuffer.getChannelData(0)
   var input = e.inputBuffer.getChannelData(0)
@@ -396,72 +461,11 @@ analyzer.onaudioprocess = function (e) {
   }
 }
 
-var clockTime = 0
-var lastStartTime = new Date().getTime()
-function draw () {
-  var currentTime = new Date().getTime()
+var mountLocation = document.getElementById('webgl-skeletal-sound-tutorial') || document.body
+controls.appendChild(playbackSlider)
+controls.appendChild(muteButton)
+controls.appendChild(volumeBarContainer)
+mountLocation.appendChild(controls)
+mountLocation.appendChild(canvas)
 
-  var timeElapsed = (currentTime - lastStartTime) / 1000 * playbackSpeed
-  clockTime += timeElapsed
-
-  lastStartTime = currentTime
-  // yRotation += 0.02
-  gl.clear(gl.COLOR_BUFFER_BIT, gl.DEPTH_BUFFER_BIT)
-
-  var animationData = animationSystem.interpolateJoints({
-    currentTime: clockTime,
-    keyframes: baseballPlayer.keyframes,
-    jointNums: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 13, 14, 15, 16, 17],
-    currentAnimation: {
-      startTime: 0,
-      range: [6, 17]
-    }
-  })
-
-  var newLowerKeyframe = animationData.currentAnimationInfo.lowerKeyframeNumber
-
-  if (newLowerKeyframe === 8 && previousLowerKeyframe !== newLowerKeyframe) {
-    if (!muted) {
-      audio.play()
-    }
-  }
-
-  previousLowerKeyframe = newLowerKeyframe
-
-  for (var j = 0; j < 18; j++) {
-    var rotQuat = animationData.joints[j].slice(0, 4)
-    var transQuat = animationData.joints[j].slice(4, 8)
-
-    gl.uniform4fv(boneRotQuaternions[j], rotQuat)
-    gl.uniform4fv(boneTransQuaternions[j], transQuat)
-  }
-
-  var modelMatrix = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]
-  var nMatrix = glMat3.fromMat4([], modelMatrix)
-
-  // glMat4.rotateY(modelMatrix, modelMatrix, yRotation)
-
-  var camera = glMat4.create()
-  glMat4.translate(camera, camera, [0, 0, 25])
-  var yAxisCameraRot = glMat4.create()
-  var xAxisCameraRot = glMat4.create()
-  glMat4.rotateX(xAxisCameraRot, xAxisCameraRot, -xCamRot)
-  glMat4.rotateY(yAxisCameraRot, yAxisCameraRot, yCamRot)
-
-  glMat4.multiply(camera, xAxisCameraRot, camera)
-  glMat4.multiply(camera, yAxisCameraRot, camera)
-
-  glMat4.lookAt(camera, [camera[12], camera[13], camera[14]], [0, 0, 0], [0, 1, 0])
-
-  var mVMatrix = glMat4.multiply([], camera, modelMatrix)
-
-  gl.uniformMatrix3fv(nMatrixUni, false, nMatrix)
-  gl.uniformMatrix4fv(mVMatrixUni, false, mVMatrix)
-
-  if (imageHasLoaded) {
-    gl.drawElements(gl.TRIANGLES, baseballPlayer.positionIndices.length, gl.UNSIGNED_SHORT, 0)
-  }
-
-  window.requestAnimationFrame(draw)
-}
 draw()
