@@ -6,7 +6,7 @@ var animationSystem = require('skeletal-animation-system')
 var mat4ToDualQuat = require('mat4-to-dual-quat')
 
 var model = require('./cowboy.json')
-baseballPlayer = expandVertexData(model)
+var baseballPlayer = expandVertexData(model)
 baseballPlayer.keyframes = model.keyframes
 
 var canvas = document.createElement('canvas')
@@ -47,6 +47,7 @@ gl.enable(gl.DEPTH_TEST)
 var vertexGLSL = `
 attribute vec3 aVertexPosition;
 attribute vec3 aVertexNormal;
+attribute vec2 aVertexUV;
 
 attribute vec4 aJointIndex;
 attribute vec4 aJointWeight;
@@ -64,7 +65,7 @@ uniform vec4 boneRotQuaternions[18];
 uniform vec4 boneTransQuaternions[18];
 
 varying vec3 vLightWeighting;
-varying vec3 vNormmal;
+varying vec2 vUV;
 
 void main (void) {
   // Blend our dual quaternion
@@ -155,6 +156,7 @@ void main (void) {
   gl_Position = leftHandedPosition;
 
   vNormal = transformedNormal;
+  vUV = aVertexUV;
 }
 `
 
@@ -163,18 +165,20 @@ precision mediump float;
 
 varying vec3 vLightWeighting;
 varying vec3 vNormal;
+varying vec2 vUV;
 
 uniform vec3 uAmbientColor;
 uniform vec3 uDirectionalColor;
 uniform vec3 uLightingDirection;
+uniform sampler2D uSampler;
 
 void main(void) {
   // TODO: Phong
   float directionalLightWeighting = max(dot(vNormal, uLightingDirection), 0.0);
   vec3 lightWeighting = uAmbientColor + uDirectionalColor * directionalLightWeighting;
 
-  vec3 baseColor = vec3(1.0, 1.0, 1.0);
-  gl_FragColor = vec4(baseColor * lightWeighting, 1.0);
+  vec4 baseColor = texture2D(uSampler, vec2(vUV.s, vUV.t));
+  gl_FragColor = baseColor * vec4(lightWeighting, 1.0);
 }
 `
 
@@ -197,11 +201,13 @@ gl.useProgram(shaderProgram)
 
 var vertexPosAttrib = gl.getAttribLocation(shaderProgram, 'aVertexPosition')
 var vertexNormalAttrib = gl.getAttribLocation(shaderProgram, 'aVertexNormal')
+var vertexUVAttrib = gl.getAttribLocation(shaderProgram, 'aVertexUV')
 var jointIndexAttrib = gl.getAttribLocation(shaderProgram, 'aJointIndex')
 var jointWeightAttrib = gl.getAttribLocation(shaderProgram, 'aJointWeight')
 
 gl.enableVertexAttribArray(vertexPosAttrib)
 gl.enableVertexAttribArray(vertexNormalAttrib)
+gl.enableVertexAttribArray(vertexUVAttrib)
 gl.enableVertexAttribArray(jointIndexAttrib)
 gl.enableVertexAttribArray(jointWeightAttrib)
 
@@ -247,6 +253,11 @@ gl.bindBuffer(gl.ARRAY_BUFFER, jointWeightBuffer)
 gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(baseballPlayer.jointWeights), gl.STATIC_DRAW)
 gl.vertexAttribPointer(jointWeightAttrib, 4, gl.FLOAT, false, 0, 0)
 
+var vertexUVBuffer = gl.createBuffer()
+gl.bindBuffer(gl.ARRAY_BUFFER, vertexUVBuffer)
+gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(baseballPlayer.uvs), gl.STATIC_DRAW)
+gl.vertexAttribPointer(vertexUVAttrib, 2, gl.FLOAT, false, 0, 0)
+
 var vertexIndexBuffer = gl.createBuffer()
 gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, vertexIndexBuffer)
 gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint16Array(baseballPlayer.positionIndices), gl.STATIC_DRAW)
@@ -261,6 +272,24 @@ gl.uniform3fv(lightingDirectionUni, lightingDirection)
 gl.uniform3fv(directionalColorUni, [0, 1, 1])
 
 gl.uniformMatrix4fv(pMatrixUni, false, glMat4.perspective([], Math.PI / 3, 1, 0.1, 100))
+
+var texture = gl.createTexture()
+var uSampler = gl.getUniformLocation(shaderProgram, 'uSampler')
+
+var textureImage = new window.Image()
+var imageHasLoaded
+textureImage.onload = function () {
+  gl.bindTexture(gl.TEXTURE_2D, texture)
+  gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true)
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST)
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST)
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, textureImage)
+  imageHasLoaded = true
+
+  gl.activeTexture(gl.TEXTURE0)
+  gl.uniform1i(uSampler, 0)
+}
+textureImage.src = 'cowboy-texture.png'
 
 var firstKeyframe = Object.keys(baseballPlayer.keyframes)[0]
 baseballPlayer.keyframes = Object.keys(baseballPlayer.keyframes)
@@ -282,8 +311,6 @@ playbackSlider.oninput = function (e) {
   playbackSpeed = e.target.value / 100
 }
 
-
-// var yRotation = 0
 var previousLowerKeyframe
 
 var audio = new window.Audio()
@@ -294,7 +321,6 @@ audio.src = 'bat-hit-ball.mp3'
 var context = new window.AudioContext()
 var analyzer = context.createScriptProcessor(1024, 1, 1)
 var source = context.createMediaElementSource(audio)
-console.log(source)
 var gainNode = context.createGain()
 
 source.connect(analyzer)
@@ -432,7 +458,9 @@ function draw () {
   gl.uniformMatrix3fv(nMatrixUni, false, nMatrix)
   gl.uniformMatrix4fv(mVMatrixUni, false, mVMatrix)
 
-  gl.drawElements(gl.TRIANGLES, baseballPlayer.positionIndices.length, gl.UNSIGNED_SHORT, 0)
+  if (imageHasLoaded) {
+    gl.drawElements(gl.TRIANGLES, baseballPlayer.positionIndices.length, gl.UNSIGNED_SHORT, 0)
+  }
 
   window.requestAnimationFrame(draw)
 }
