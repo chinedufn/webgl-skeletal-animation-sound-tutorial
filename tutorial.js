@@ -1,3 +1,4 @@
+// First we grab our math dependencies that we'll be making use of
 var glMat4 = require('gl-mat4')
 var glMat3 = require('gl-mat3')
 var glVec3 = require('gl-vec3')
@@ -5,7 +6,10 @@ var expandVertexData = require('expand-vertex-data')
 var animationSystem = require('skeletal-animation-system')
 var mat4ToDualQuat = require('mat4-to-dual-quat')
 
-var model = require('./cowboy.json')
+// Our model data uses matrices for all of the bone data, but
+// skelelal-animation-system expects dual quaternions. So here
+// we convert all of the joint matrices into dual quaternions.
+var model = require('./baseball-player.json')
 var baseballPlayer = expandVertexData(model)
 baseballPlayer.keyframes = Object.keys(model.keyframes)
 .reduce(function (dualQuats, keyframe) {
@@ -16,7 +20,10 @@ baseballPlayer.keyframes = Object.keys(model.keyframes)
   return dualQuats
 }, {})
 
+// We create a canvas as well as controls to track finger and mouse drags over
+// the canvas. We use this to know how much to move our camera
 var canvas = document.createElement('canvas')
+canvas.style.cursor = 'pointer'
 canvas.width = 500
 canvas.height = 500
 
@@ -46,10 +53,14 @@ canvas.onmousemove = function (e) {
   }
 }
 
+// We create a WebGL context so that we can push data to the GPU and render our tutorial
 var gl = canvas.getContext('webgl')
 gl.clearColor(0.0, 0.0, 0.0, 1.0)
 gl.enable(gl.DEPTH_TEST)
 
+// Here we create a dual quaternion linear blending vertex shader. You can check out
+// http://chinedufn.com/dual-quaternion-shader-explained/ for an explanation of how
+// it works.
 var vertexGLSL = `
 attribute vec3 aVertexPosition;
 attribute vec3 aVertexNormal;
@@ -64,11 +75,9 @@ uniform mat4 uMVMatrix;
 uniform mat4 uPMatrix;
 uniform mat3 uNMatrix;
 
-// TODO: Generate this shader at runtime with proper num joints
-// TODO: Stopped working on mobile when we had a combined array length of > a few dozen
 // TODO: Variable
-uniform vec4 boneRotQuaternions[18];
-uniform vec4 boneTransQuaternions[18];
+uniform vec4 boneRotQuaternions[20];
+uniform vec4 boneTransQuaternions[20];
 
 varying vec3 vLightWeighting;
 varying vec2 vUV;
@@ -155,7 +164,6 @@ void main (void) {
   leftWorldSpace.y = y;
   leftWorldSpace.z = z;
 
-  // TODO: Is that even called world space?
   vec4 leftHandedPosition = uPMatrix * uMVMatrix * leftWorldSpace;
 
   // We only have one index right now... so the weight is always 1.
@@ -166,6 +174,7 @@ void main (void) {
 }
 `
 
+// We create a fragment shader with some per fragment lighting for our model
 var fragmentGLSL = `
 precision mediump float;
 
@@ -179,7 +188,6 @@ uniform vec3 uLightingDirection;
 uniform sampler2D uSampler;
 
 void main(void) {
-  // TODO: Phong
   float directionalLightWeighting = max(dot(vNormal, uLightingDirection), 0.0);
   vec3 lightWeighting = uAmbientColor + uDirectionalColor * directionalLightWeighting;
 
@@ -188,15 +196,14 @@ void main(void) {
 }
 `
 
+// Iniitalize our shader program
 var vertexShader = gl.createShader(gl.VERTEX_SHADER, vertexGLSL)
 gl.shaderSource(vertexShader, vertexGLSL)
 gl.compileShader(vertexShader)
-console.log(gl.getShaderInfoLog(vertexShader))
 
 var fragmentShader = gl.createShader(gl.FRAGMENT_SHADER, fragmentGLSL)
 gl.shaderSource(fragmentShader, fragmentGLSL)
 gl.compileShader(fragmentShader)
-console.log(gl.getShaderInfoLog(fragmentShader))
 
 var shaderProgram = gl.createProgram()
 gl.attachShader(shaderProgram, vertexShader)
@@ -205,6 +212,7 @@ gl.linkProgram(shaderProgram)
 
 gl.useProgram(shaderProgram)
 
+// Enable all of our attributes
 var vertexPosAttrib = gl.getAttribLocation(shaderProgram, 'aVertexPosition')
 var vertexNormalAttrib = gl.getAttribLocation(shaderProgram, 'aVertexNormal')
 var vertexUVAttrib = gl.getAttribLocation(shaderProgram, 'aVertexUV')
@@ -217,38 +225,33 @@ gl.enableVertexAttribArray(vertexUVAttrib)
 gl.enableVertexAttribArray(jointIndexAttrib)
 gl.enableVertexAttribArray(jointWeightAttrib)
 
+// Get all of our uniform locations
 var ambientColorUni = gl.getUniformLocation(shaderProgram, 'uAmbientColor')
 var lightingDirectionUni = gl.getUniformLocation(shaderProgram, 'uLightingDirection')
 var directionalColorUni = gl.getUniformLocation(shaderProgram, 'uDirectionalColor')
 var mVMatrixUni = gl.getUniformLocation(shaderProgram, 'uMVMatrix')
 var pMatrixUni = gl.getUniformLocation(shaderProgram, 'uPMatrix')
 var nMatrixUni = gl.getUniformLocation(shaderProgram, 'uNMatrix')
+var uSampler = gl.getUniformLocation(shaderProgram, 'uSampler')
 
 var boneRotQuaternions = {}
 var boneTransQuaternions = {}
-for (var i = 0; i < 18; i++) {
+for (var i = 0; i < 20; i++) {
   boneRotQuaternions[i] = gl.getUniformLocation(shaderProgram, `boneRotQuaternions[${i}]`)
   boneTransQuaternions[i] = gl.getUniformLocation(shaderProgram, `boneTransQuaternions[${i}]`)
 }
 
+// Push our attribute data to the GPU
 var vertexPosBuffer = gl.createBuffer()
 gl.bindBuffer(gl.ARRAY_BUFFER, vertexPosBuffer)
 gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(baseballPlayer.positions), gl.STATIC_DRAW)
 gl.vertexAttribPointer(vertexPosAttrib, 3, gl.FLOAT, false, 0, 0)
-var maxPosIndex = 0
-var maxFoo = 0
-baseballPlayer.positionIndices.forEach(function (index, foo) {
-  maxPosIndex = Math.max(maxPosIndex, index)
-  maxFoo = Math.max(maxFoo, foo)
-})
 
 var vertexNormalBuffer = gl.createBuffer()
 gl.bindBuffer(gl.ARRAY_BUFFER, vertexNormalBuffer)
 gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(baseballPlayer.normals), gl.STATIC_DRAW)
 gl.vertexAttribPointer(vertexNormalAttrib, 3, gl.FLOAT, false, 0, 0)
 
-// TODO: This is only 0-4 or so so only need a byte array
-// TODO: Rename to joint influencer buffer
 var jointIndexBuffer = gl.createBuffer()
 gl.bindBuffer(gl.ARRAY_BUFFER, jointIndexBuffer)
 gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(baseballPlayer.jointInfluences), gl.STATIC_DRAW)
@@ -268,20 +271,18 @@ var vertexIndexBuffer = gl.createBuffer()
 gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, vertexIndexBuffer)
 gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint16Array(baseballPlayer.positionIndices), gl.STATIC_DRAW)
 
+// Set our lighting uniforms
 gl.uniform3fv(ambientColorUni, [0.3, 0.3, 0.3])
 var lightingDirection = [1, -1, -1]
-// TODO: Why scale? Look up in learningwebgl.com lesson
 glVec3.scale(lightingDirection, lightingDirection, -1)
 glVec3.normalize(lightingDirection, lightingDirection)
-
 gl.uniform3fv(lightingDirectionUni, lightingDirection)
-gl.uniform3fv(directionalColorUni, [0, 1, 1])
+gl.uniform3fv(directionalColorUni, [1, 1, 1])
 
 gl.uniformMatrix4fv(pMatrixUni, false, glMat4.perspective([], Math.PI / 3, 1, 0.1, 100))
 
+// Load up our texture data
 var texture = gl.createTexture()
-var uSampler = gl.getUniformLocation(shaderProgram, 'uSampler')
-
 var textureImage = new window.Image()
 var imageHasLoaded
 textureImage.onload = function () {
@@ -291,46 +292,35 @@ textureImage.onload = function () {
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST)
   gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, textureImage)
   imageHasLoaded = true
-
-  gl.activeTexture(gl.TEXTURE0)
-  gl.uniform1i(uSampler, 0)
 }
-textureImage.src = 'cowboy-texture.png'
+textureImage.src = 'baseball-player-uvs.png'
 
-var playbackSlider = document.createElement('input')
-playbackSlider.type = 'range'
-playbackSlider.max = 100
-playbackSlider.min = 0
-playbackSlider.value = 100
-var playbackSpeed = 1
-playbackSlider.oninput = function (e) {
-  playbackSpeed = e.target.value / 100
+var keyframesToPlaySoundOn = {
+  7: true,
+  9: true
 }
-
-var previousLowerKeyframe
 
 var clockTime = 0
 var lastStartTime = new Date().getTime()
-var keyframesToPlaySoundOn = {
-  7: true
-}
+
+var previousLowerKeyframe
+
 function draw () {
   var currentTime = new Date().getTime()
 
   var timeElapsed = (currentTime - lastStartTime) / 1000 * playbackSpeed
   clockTime += timeElapsed
-
   lastStartTime = currentTime
-  // yRotation += 0.02
+
   gl.clear(gl.COLOR_BUFFER_BIT, gl.DEPTH_BUFFER_BIT)
 
   var animationData = animationSystem.interpolateJoints({
     currentTime: clockTime,
     keyframes: baseballPlayer.keyframes,
-    jointNums: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 13, 14, 15, 16, 17],
+    jointNums: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 13, 14, 15, 16, 17, 18, 19, 20],
     currentAnimation: {
       startTime: 0,
-      range: [6, 17]
+      range: [0, 12]
     }
   })
 
@@ -344,7 +334,7 @@ function draw () {
 
   previousLowerKeyframe = newLowerKeyframe
 
-  for (var j = 0; j < 18; j++) {
+  for (var j = 0; j < 20; j++) {
     var rotQuat = animationData.joints[j].slice(0, 4)
     var transQuat = animationData.joints[j].slice(4, 8)
 
@@ -355,20 +345,15 @@ function draw () {
   var modelMatrix = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]
   var nMatrix = glMat3.fromMat4([], modelMatrix)
 
-  // glMat4.rotateY(modelMatrix, modelMatrix, yRotation)
-
   var camera = glMat4.create()
-  glMat4.translate(camera, camera, [0, 0, 25])
+  glMat4.translate(camera, camera, [0, 0, 2.5])
   var yAxisCameraRot = glMat4.create()
   var xAxisCameraRot = glMat4.create()
   glMat4.rotateX(xAxisCameraRot, xAxisCameraRot, -xCamRot)
   glMat4.rotateY(yAxisCameraRot, yAxisCameraRot, yCamRot)
-
   glMat4.multiply(camera, xAxisCameraRot, camera)
   glMat4.multiply(camera, yAxisCameraRot, camera)
-
   glMat4.lookAt(camera, [camera[12], camera[13], camera[14]], [0, 0, 0], [0, 1, 0])
-
   var mVMatrix = glMat4.multiply([], camera, modelMatrix)
 
   gl.uniformMatrix3fv(nMatrixUni, false, nMatrix)
@@ -398,11 +383,6 @@ source.connect(analyzer)
 analyzer.connect(gainNode)
 gainNode.connect(context.destination)
 
-var volumeBarContainer = document.createElement('div')
-volumeBarContainer.style.display = 'flex'
-volumeBarContainer.style.display = 'flex'
-
-var volumeBars = []
 var muted = true
 var hasClickedBefore = false
 var muteButton = document.createElement('button')
@@ -410,6 +390,8 @@ muteButton.innerHTML = 'Click to un-mute'
 muteButton.style.cursor = 'pointer'
 muteButton.style.marginRight = '10px'
 muteButton.style.marginLeft = '10px'
+muteButton.style.width = '100px'
+muteButton.style.height = '40px'
 muteButton.onclick = function () {
   // On iOS sounds will not play until the first time that a user action has triggered
   // a sound.
@@ -427,20 +409,42 @@ muteButton.onclick = function () {
   muteButton.innerHTML = muted ? 'Click to un-mute' : 'Click to mute'
 }
 
-for (var k = 0; k < 10; k++) {
+// Create the slider that allows us to play our animation in slow motion
+var playbackSlider = document.createElement('input')
+playbackSlider.type = 'range'
+playbackSlider.max = 100
+playbackSlider.min = 0
+playbackSlider.value = 85
+
+var playbackSpeed = 0.85
+
+var playbackDisplay = document.createElement('div')
+playbackDisplay.innerHTML = 'Playback: 85%'
+
+playbackSlider.oninput = function (e) {
+  playbackSpeed = e.target.value / 100
+  playbackDisplay.innerHTML = 'Playback: ' + e.target.value + '%'
+}
+
+// Create the UI indicator that shows how loud
+// the sound is
+var volumeBarContainer = document.createElement('div')
+volumeBarContainer.style.display = 'flex'
+volumeBarContainer.style.display = 'flex'
+var volumeBars = []
+for (var k = 0; k < 5; k++) {
   var volumeBar = document.createElement('div')
-  volumeBar.style.width = '20px'
-  volumeBar.style.height = '20px'
+  volumeBar.style.width = '40px'
+  volumeBar.style.height = '40px'
   volumeBar.style.border = 'solid #333 1px'
   volumeBar.style.transition = '0.9s ease background-color'
+  volumeBar.style.marginRight = '2px'
   volumeBars.push(volumeBar)
   volumeBarContainer.appendChild(volumeBar)
 }
 
-var controls = document.createElement('div')
-controls.style.display = 'flex'
-controls.style.marginBottom = '5px'
-
+// Figure out how loud the sound is so that we can update our volume
+// indicator
 analyzer.onaudioprocess = function (e) {
   var out = e.outputBuffer.getChannelData(0)
   var input = e.inputBuffer.getChannelData(0)
@@ -451,8 +455,8 @@ analyzer.onaudioprocess = function (e) {
     max = input[i] > max ? input[i] : max
   }
 
-  var volume = max * 100
-  for (var j = 0; j < 10; j++) {
+  var volume = max * 50
+  for (var j = 0; j < 5; j++) {
     if (j < volume) {
       volumeBars[j].style.backgroundColor = 'red'
     } else {
@@ -461,11 +465,19 @@ analyzer.onaudioprocess = function (e) {
   }
 }
 
+// Add the controls into the page
+var controls = document.createElement('span')
+controls.style.display = 'flex'
+controls.style.marginBottom = '5px'
+controls.style.alignItems = 'center'
+
 var mountLocation = document.getElementById('webgl-skeletal-sound-tutorial') || document.body
 controls.appendChild(playbackSlider)
 controls.appendChild(muteButton)
 controls.appendChild(volumeBarContainer)
 mountLocation.appendChild(controls)
+mountLocation.appendChild(playbackDisplay)
 mountLocation.appendChild(canvas)
 
+// Start drawing every request animation frame
 draw()
