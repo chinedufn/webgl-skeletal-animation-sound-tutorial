@@ -279,26 +279,51 @@ var previousLowerKeyframe
 
 var audio = new window.Audio()
 audio.crossOrigin = 'anonymous'
-audio.src = 'https://dl.dropboxusercontent.com/s/8c9m92u1euqnkaz/GershwinWhiteman-RhapsodyInBluePart1.mp3'
-audio.play()
+// audio.src = 'https://dl.dropboxusercontent.com/s/8c9m92u1euqnkaz/GershwinWhiteman-RhapsodyInBluePart1.mp3'
+audio.src = 'bat-hit-ball.mp3'
 
 var context = new window.AudioContext()
 var analyzer = context.createScriptProcessor(1024, 1, 1)
 var source = context.createMediaElementSource(audio)
+var gainNode = context.createGain()
+
 source.connect(analyzer)
-analyzer.connect(context.destination)
+analyzer.connect(gainNode)
+gainNode.connect(context.destination)
 
 var volumeBarContainer = document.createElement('div')
 volumeBarContainer.style.display = 'flex'
 
 var volumeBars = []
+var muted = true
+var hasClickedBefore = false
+var muteButton = document.createElement('button')
+muteButton.innerHTML = 'Click to un-mute'
+muteButton.style.cursor = 'pointer'
+muteButton.onclick = function () {
+  // On iOS sounds will not play until the first time that a user action has triggered
+  // a sound.
+  if (!hasClickedBefore) {
+    hasClickedBefore = true
+    gainNode.gain.value = 0
+    audio.play()
+    setTimeout(function () {
+      gainNode.gain.value = 1
+    }, 500)
+  }
+
+  muted = !muted
+
+  muteButton.innerHTML = muted ? 'Click to un-mute' : 'Click to mute'
+}
+document.body.appendChild(muteButton)
 
 for (var i = 0; i < 10; i++) {
   var volumeBar = document.createElement('div')
   volumeBar.style.width = '30px'
   volumeBar.style.height = '30px'
   volumeBar.style.border = 'solid #333 1px'
-  volumeBar.style.transition = '0.4s ease background-color'
+  volumeBar.style.transition = '0.9s ease background-color'
   volumeBars.push(volumeBar)
   volumeBarContainer.appendChild(volumeBar)
 }
@@ -314,7 +339,7 @@ analyzer.onaudioprocess = function (e) {
     max = input[i] > max ? input[i] : max
   }
 
-  var volume = max * 50
+  var volume = max * 100
   for (var j = 0; j < 10; j++) {
     if (j < volume) {
       volumeBars[j].style.backgroundColor = 'red'
@@ -342,7 +367,9 @@ function draw () {
   var newLowerKeyframe = animationData.currentAnimationInfo.lowerKeyframeNumber
 
   if (newLowerKeyframe === 8 && previousLowerKeyframe !== newLowerKeyframe) {
-    console.log('playSound')
+    if (!muted) {
+      audio.play()
+    }
   }
 
   previousLowerKeyframe = newLowerKeyframe
