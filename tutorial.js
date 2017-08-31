@@ -295,25 +295,34 @@ textureImage.onload = function () {
 }
 textureImage.src = 'baseball-player-uvs.png'
 
+// Whenever we hit keyframe #7 or #9 we will play a sound effect
 var keyframesToPlaySoundOn = {
   7: true,
   9: true
 }
 
+// We maintain a clock for our application. The clock is used to know how
+// far into the animation we are so that we interpolate the correct keyframes
 var clockTime = 0
 var lastStartTime = new Date().getTime()
 
+// By tracking the keyframe from the last time we rendered we can check whether
+// or not the new keyframe is different from the previous one. If it's different
+// and it's one of the keyframes that needs a sound effect, we'll play a soung
 var previousLowerKeyframe
 
 function draw () {
   var currentTime = new Date().getTime()
 
+  // Move the click forwards in seconds - based on the playback speed
   var timeElapsed = (currentTime - lastStartTime) / 1000 * playbackSpeed
   clockTime += timeElapsed
   lastStartTime = currentTime
 
   gl.clear(gl.COLOR_BUFFER_BIT, gl.DEPTH_BUFFER_BIT)
 
+  // Calculate all of our joint dual quaternions for our model, based
+  // on the current time
   var animationData = animationSystem.interpolateJoints({
     currentTime: clockTime,
     keyframes: baseballPlayer.keyframes,
@@ -324,16 +333,17 @@ function draw () {
     }
   })
 
+  // If we're just arriving at one of the keyframes that need a found effect we play our sound
   var newLowerKeyframe = animationData.currentAnimationInfo.lowerKeyframeNumber
-
   if (keyframesToPlaySoundOn[newLowerKeyframe] && previousLowerKeyframe !== newLowerKeyframe) {
     if (!muted) {
       audio.play()
     }
   }
-
   previousLowerKeyframe = newLowerKeyframe
 
+  // Loop through our joint dual quaternions for this frame and send them to the GPU
+  // We'll use them for vertex skinning
   for (var j = 0; j < 20; j++) {
     var rotQuat = animationData.joints[j].slice(0, 4)
     var transQuat = animationData.joints[j].slice(4, 8)
@@ -342,9 +352,11 @@ function draw () {
     gl.uniform4fv(boneTransQuaternions[j], transQuat)
   }
 
+  // Calculate our normal matrix to appropriately transform our normals
   var modelMatrix = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]
   var nMatrix = glMat3.fromMat4([], modelMatrix)
 
+  // We create a camera and use it as our view matrix
   var camera = glMat4.create()
   glMat4.translate(camera, camera, [0, 0, 2.5])
   var yAxisCameraRot = glMat4.create()
@@ -359,6 +371,7 @@ function draw () {
   gl.uniformMatrix3fv(nMatrixUni, false, nMatrix)
   gl.uniformMatrix4fv(mVMatrixUni, false, mVMatrix)
 
+  // Once our texture has loaded we begin drawing our model
   if (imageHasLoaded) {
     gl.drawElements(gl.TRIANGLES, baseballPlayer.positionIndices.length, gl.UNSIGNED_SHORT, 0)
   }
@@ -450,6 +463,8 @@ analyzer.onaudioprocess = function (e) {
   var input = e.inputBuffer.getChannelData(0)
   var max = 0
 
+  // Figure out how loud the current sample is. We'll then
+  // use the loudness in order to render our volume indicator
   for (var i = 0; i < input.length; i++) {
     out[i] = input[i]
     max = input[i] > max ? input[i] : max
