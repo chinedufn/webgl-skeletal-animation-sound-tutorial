@@ -53,6 +53,23 @@ canvas.onmousemove = function (e) {
   }
 }
 
+// As you drag your finger we move the camera
+canvas.addEventListener('touchstart', function (e) {
+  lastX = e.touches[0].clientX
+  lastY = e.touches[0].clientY
+})
+canvas.addEventListener('touchmove', function (e) {
+  e.preventDefault()
+  xCamRot += (e.touches[0].clientY - lastY) / 60
+  yCamRot -= (e.touches[0].clientX - lastX) / 60
+
+  xCamRot = Math.min(xCamRot, Math.PI / 2.5)
+  yCamRot = Math.max(yCamRot, -0.5)
+
+  lastX = e.touches[0].clientX
+  lastY = e.touches[0].clientY
+})
+
 // We create a WebGL context so that we can push data to the GPU and render our tutorial
 var gl = canvas.getContext('webgl')
 gl.clearColor(0.0, 0.0, 0.0, 1.0)
