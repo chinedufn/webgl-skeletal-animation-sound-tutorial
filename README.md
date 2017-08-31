@@ -1,5 +1,7 @@
 # WebGL Skeletal Animation Sound Effect Tutorial
 
+![Screenshot of demo](screenshot.png)
+
 ## To read the tutorial
 
 http://chinedufn.com/webgl-skeletal-animation-sound-effect-tutorial/
