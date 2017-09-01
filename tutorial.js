@@ -64,7 +64,7 @@ canvas.addEventListener('touchmove', function (e) {
   yCamRot -= (e.touches[0].clientX - lastX) / 60
 
   xCamRot = Math.min(xCamRot, Math.PI / 2.5)
-  yCamRot = Math.max(yCamRot, -0.5)
+  xCamRot = Math.max(xCamRot, -0.5)
 
   lastX = e.touches[0].clientX
   lastY = e.touches[0].clientY
