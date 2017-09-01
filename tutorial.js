@@ -399,12 +399,12 @@ function draw () {
 /**
  * Web Audio setup
  */
-var audio = new window.Audio()
+var audio = new (window.Audio || window.webkitAudio)()
 audio.crossOrigin = 'anonymous'
 // audio.src = 'https://dl.dropboxusercontent.com/s/8c9m92u1euqnkaz/GershwinWhiteman-RhapsodyInBluePart1.mp3'
 audio.src = 'bat-hit-ball.mp3'
 
-var context = new window.AudioContext()
+var context = new (window.AudioContext || window.webkitAudioContext)()
 var analyzer = context.createScriptProcessor(1024, 1, 1)
 var source = context.createMediaElementSource(audio)
 var gainNode = context.createGain()
